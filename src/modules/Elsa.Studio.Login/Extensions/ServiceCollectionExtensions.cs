@@ -1,3 +1,4 @@
+using BlazorWasmAuth.Identity;
 using Elsa.Studio.Contracts;
 using Elsa.Studio.Login.ComponentProviders;
 using Elsa.Studio.Login.Contracts;
@@ -23,9 +24,11 @@ public static class ServiceCollectionExtensions
                 .AddScoped<IFeature, Feature>()
                 .AddOptions()
                 .AddAuthorizationCore()
-                .AddScoped<AuthenticatingApiHttpMessageHandler>()
+                //.AddScoped<AuthenticatingApiHttpMessageHandler>()
+                .AddScoped<AuthenticatingApiHttpMessageHandlerCookie>()
+                //.AddScoped<AuthenticationStateProvider, CookieAuthenticationStateProvider>()
                 .AddScoped<AuthenticationStateProvider, AccessTokenAuthenticationStateProvider>()
-                .AddScoped<IUnauthorizedComponentProvider, RedirectToLoginUnauthorizedComponentProvider>()
+                //.AddScoped<IUnauthorizedComponentProvider, RedirectToLoginUnauthorizedComponentProvider>()
                 .AddScoped<ICredentialsValidator, DefaultCredentialsValidator>()
                 .AddScoped<IRemoteBackendApiClientProvider, DefaultRemoteBackendApiClientProvider>()
             ;

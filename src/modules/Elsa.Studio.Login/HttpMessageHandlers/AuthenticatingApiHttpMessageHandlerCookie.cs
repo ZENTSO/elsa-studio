@@ -1,19 +1,12 @@
-using System.Net;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using Elsa.Api.Client.Resources.Identity.Responses;
 using Elsa.Studio.Contracts;
-using Elsa.Studio.Login.Contracts;
-using Elsa.Studio.Login.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 
 namespace Elsa.Studio.Login.HttpMessageHandlers;
 
-/// <summary>
-/// An <see cref="HttpMessageHandler"/> that configures the outgoing HTTP request to use the access token as bearer token.
-/// </summary>
-public class AuthenticatingApiHttpMessageHandler(IRemoteBackendAccessor remoteBackendAccessor, IBlazorServiceAccessor blazorServiceAccessor)
+public class AuthenticatingApiHttpMessageHandlerCookie(
+    IRemoteBackendAccessor remoteBackendAccessor,
+    IBlazorServiceAccessor blazorServiceAccessor)
     : DelegatingHandler
 {
     /// <summary>
@@ -22,7 +15,8 @@ public class AuthenticatingApiHttpMessageHandler(IRemoteBackendAccessor remoteBa
     /// <param name="request"></param>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
-    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+        CancellationToken cancellationToken)
     {
         var sp = blazorServiceAccessor.Services;
         var jsRuntime = sp.GetRequiredService<IJSRuntime>();
@@ -39,21 +33,23 @@ public class AuthenticatingApiHttpMessageHandler(IRemoteBackendAccessor remoteBa
             {
                 request.Headers.Add("Cookie", $".AspNet.SharedCookie={authCookie}");
             }
+
             if (!string.IsNullOrEmpty(idservCookie))
             {
                 request.Headers.Add("Cookie", $"idsrv.session={authCookie}");
             }
-            
+
             var cookieContainer = new System.Net.CookieContainer();
 
-            cookieContainer.Add(new Uri(request.RequestUri.GetLeftPart(UriPartial.Authority)), new System.Net.Cookie("idsrv.session", idservCookie));
-            cookieContainer.Add(new Uri(request.RequestUri.GetLeftPart(UriPartial.Authority)), new System.Net.Cookie(".AspNet.SharedCookie", authCookie));
+            cookieContainer.Add(new Uri(request.RequestUri.GetLeftPart(UriPartial.Authority)),
+                new System.Net.Cookie("idsrv.session", idservCookie));
+            cookieContainer.Add(new Uri(request.RequestUri.GetLeftPart(UriPartial.Authority)),
+                new System.Net.Cookie(".AspNet.SharedCookie", authCookie));
 
             if (InnerHandler is HttpClientHandler httpClientHandler)
             {
                 httpClientHandler.CookieContainer = cookieContainer;
             }
-            
         }
         catch (Exception ex)
         {
@@ -61,7 +57,7 @@ public class AuthenticatingApiHttpMessageHandler(IRemoteBackendAccessor remoteBa
             Console.WriteLine(ex.StackTrace);
         }
 
-        request.Headers.Add("CT","somevalue");
+        request.Headers.Add("CT", "somevalue");
         Console.WriteLine($"Added cookie to request headers: {request.Headers}");
         var response = await base.SendAsync(request, cancellationToken);
 
@@ -79,33 +75,5 @@ public class AuthenticatingApiHttpMessageHandler(IRemoteBackendAccessor remoteBa
         }
 
         return response;
-    }
-
-    private async Task<LoginResponse> RefreshTokenAsync(IJwtAccessor jwtAccessor, CancellationToken cancellationToken)
-    {
-        // Get refresh token.
-        var refreshToken = await jwtAccessor.ReadTokenAsync(TokenNames.RefreshToken);
-        
-        // Setup request to get new tokens.
-        var url = remoteBackendAccessor.RemoteBackend.Url + "/identity/refresh-token";
-        var refreshRequestMessage = new HttpRequestMessage(HttpMethod.Post, url);
-        refreshRequestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", refreshToken);
-        
-        // Send request.
-        var response = await base.SendAsync(refreshRequestMessage, cancellationToken);
-
-        // If the refresh token is invalid, we can't do anything.
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
-            return new LoginResponse(false, null, null);
-
-        // Parse response into tokens.
-        var tokens = (await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: cancellationToken))!;
-        
-        // Store tokens.
-        await jwtAccessor.WriteTokenAsync(TokenNames.RefreshToken, tokens.RefreshToken!);
-        await jwtAccessor.WriteTokenAsync(TokenNames.AccessToken, tokens.AccessToken!);
-        
-        // Return tokens.
-        return tokens;
     }
 }

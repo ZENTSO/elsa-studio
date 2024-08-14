@@ -39,12 +39,12 @@ public partial class Login
 
     private async Task TryLogin()
     {
-        var isValid = await ValidateCredentials(_model.Username, _model.Password);
+        /*var isValid = await ValidateCredentials(_model.Username, _model.Password);
         if (!isValid)
         {
             Snackbar.Add("Invalid credentials. Please try again", Severity.Error);
             return;
-        }
+        }*/
 
         ((AccessTokenAuthenticationStateProvider)AuthenticationStateProvider).NotifyAuthenticationStateChanged();
         NavigationManager.NavigateTo("", true);

@@ -43,5 +43,15 @@
 <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
 <script src="_framework/blazor.webassembly.js"></script>
 </body>
-
+<script>
+    window.blazorExtensions = {
+        getCookie: function (name) {
+            var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+            if (match) {
+                return match[2];
+            }
+            return null;
+        }
+    };
+</script>
 </html>
