@@ -30,7 +30,6 @@ public static class ServiceCollectionExtensions
                 .AddScoped<AuthenticationStateProvider, AccessTokenAuthenticationStateProvider>()
                 //.AddScoped<IUnauthorizedComponentProvider, RedirectToLoginUnauthorizedComponentProvider>()
                 .AddScoped<ICredentialsValidator, DefaultCredentialsValidator>()
-                .AddScoped<IRemoteBackendApiClientProvider, DefaultRemoteBackendApiClientProvider>()
             ;
     }
 }
