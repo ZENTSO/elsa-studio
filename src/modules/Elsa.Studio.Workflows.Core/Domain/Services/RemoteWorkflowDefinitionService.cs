@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Text.Json.Nodes;
 using Elsa.Api.Client.Extensions;
@@ -12,6 +13,9 @@ using Elsa.Studio.Workflows.Domain.Contracts;
 using Elsa.Studio.Workflows.Domain.Extensions;
 using Elsa.Studio.Workflows.Domain.Models;
 using Elsa.Studio.Workflows.Domain.Notifications;
+using Microsoft.Extensions.Logging;
+using MudBlazor;
+using Newtonsoft.Json;
 using Refit;
 
 namespace Elsa.Studio.Workflows.Domain.Services;
@@ -21,6 +25,7 @@ namespace Elsa.Studio.Workflows.Domain.Services;
 /// </summary>
 public class RemoteWorkflowDefinitionService(IRemoteBackendApiClientProvider remoteBackendApiClientProvider, IIdentityGenerator identityGenerator, IMediator mediator) : IWorkflowDefinitionService
 {
+
     /// <inheritdoc />
     public async Task<PagedListResponse<WorkflowDefinitionSummary>> ListAsync(ListWorkflowDefinitionsRequest request, VersionOptions? versionOptions = default, CancellationToken cancellationToken = default)
     {
@@ -67,25 +72,87 @@ public class RemoteWorkflowDefinitionService(IRemoteBackendApiClientProvider rem
     /// <inheritdoc />
     public async Task<Result<SaveWorkflowDefinitionResponse, ValidationErrors>> SaveAsync(SaveWorkflowDefinitionRequest request, CancellationToken cancellationToken = default)
     {
+        //Debugger.Break();
+
+        var settings = new JsonSerializerSettings
+        {
+            ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+        };
+
+        // Validate that the request object is not null
+        if (request == null)
+        {
+            throw new ArgumentNullException(nameof(request), "The request object cannot be null.");
+        }
+
+        Console.WriteLine("request                        request");
+        Console.WriteLine(JsonConvert.SerializeObject(request, settings));
+
+        Console.WriteLine("request.Model                        request.Model");
+        Console.WriteLine(JsonConvert.SerializeObject(request.Model, settings));
+
         var api = await GetApiAsync(cancellationToken);
+
+        if (api == null)
+        {
+            throw new InvalidOperationException("Failed to retrieve the API instance.");
+        }
+
         var workflowDefinitionVersion = WorkflowDefinitionVersion.FromDefinitionModel(request.Model);
-        
+
+        Console.WriteLine("workflowDefinitionVersion                        workflowDefinitionVersion");
+        Console.WriteLine(JsonConvert.SerializeObject(workflowDefinitionVersion, settings));
+
+        if (workflowDefinitionVersion == null)
+        {
+            throw new InvalidOperationException("Failed to create WorkflowDefinitionVersion from the model.");
+        }
+
         try
         {
-            if (request.Publish == true) await mediator.NotifyAsync(new WorkflowDefinitionPublishing(workflowDefinitionVersion.WorkflowDefinitionId), cancellationToken);
+            if (request.Publish == true)
+            {
+                await mediator.NotifyAsync(new WorkflowDefinitionPublishing(workflowDefinitionVersion.WorkflowDefinitionId), cancellationToken);
+            }
+
             await mediator.NotifyAsync(new WorkflowDefinitionSaving(workflowDefinitionVersion), cancellationToken);
+
+            api = await GetApiAsync(cancellationToken);
+
             var response = await api.SaveAsync(request, cancellationToken);
+
+            Console.WriteLine(" api.SaveAsync.response                         api.SaveAsync.response");
+            Console.WriteLine(JsonConvert.SerializeObject(response, settings));
+
+            if (response == null)
+            {
+                throw new InvalidOperationException("The response object cannot be null.");
+            }
+
+            if (response.WorkflowDefinition == null)
+            {
+                throw new InvalidOperationException("RemoteWorkflowDefinitionService.SaveAsync : The api.SaveAsync.response.WorkflowDefinition cannot be null.");
+            }
             var newWorkflowDefinitionVersion = WorkflowDefinitionVersion.FromDefinition(response.WorkflowDefinition);
+
             await mediator.NotifyAsync(new WorkflowDefinitionSaved(newWorkflowDefinitionVersion), cancellationToken);
+
             if (request.Publish == true) await mediator.NotifyAsync(new WorkflowDefinitionPublished(newWorkflowDefinitionVersion.WorkflowDefinitionId), cancellationToken);
+
             return new(response);
         }
         catch (ValidationApiException e)
         {
             var errors = e.GetValidationErrors();
+
             await mediator.NotifyAsync(new WorkflowDefinitionSavingFailed(workflowDefinitionVersion, errors), cancellationToken);
             if (request.Publish == true) await mediator.NotifyAsync(new WorkflowDefinitionPublishingFailed(workflowDefinitionVersion, errors), cancellationToken);
-            return new(errors);
+            //return new(errors);
+            return new Result<SaveWorkflowDefinitionResponse, ValidationErrors>(errors);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("RemoteWorkflowDefinitionService.SaveAsync: An unexpected error occurred: " + ex.Message + " StackTrace : " + ex.StackTrace + " InnerException : " + ex.InnerException + " Data : " + ex.Data);
         }
     }
 
@@ -232,6 +299,17 @@ public class RemoteWorkflowDefinitionService(IRemoteBackendApiClientProvider rem
     /// <inheritdoc />
     public async Task<Result<WorkflowDefinition, ValidationErrors>> CreateNewDefinitionAsync(string name, string? description = default, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentNullException(nameof(name), "RemoteWorkflowDefinitionService.CreateNewDefinitionAsync : The workflow name cannot be null or empty.");
+        }
+
+        Console.WriteLine("name");
+        Console.WriteLine(name);
+
+        Console.WriteLine("description");
+        Console.WriteLine(description);
+
         var saveRequest = new SaveWorkflowDefinitionRequest
         {
             Model = new WorkflowDefinitionModel
@@ -252,7 +330,30 @@ public class RemoteWorkflowDefinitionService(IRemoteBackendApiClientProvider rem
             }
         };
 
+        if (saveRequest.Model == null || saveRequest.Model.Root == null)
+        {
+            throw new InvalidOperationException("The workflow definition model or its root element cannot be null.");
+        }
+
+        var settings = new JsonSerializerSettings
+        {
+            ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+            Error = (sender, args) =>
+            {
+                // Log the error or handle it as needed
+                args.ErrorContext.Handled = true;
+            }
+        };
+
+
+        Console.WriteLine("saveRequest");
+        Console.WriteLine(JsonConvert.SerializeObject(saveRequest, settings));
+
         var result = await SaveAsync(saveRequest, cancellationToken);
+
+        Console.WriteLine("CreateNewDefinitionAsync.result");
+        Console.WriteLine(JsonConvert.SerializeObject(result, settings));
+
         return result.IsSuccess
             ? new Result<WorkflowDefinition, ValidationErrors>(result.Success!.WorkflowDefinition)
             : new Result<WorkflowDefinition, ValidationErrors>(result.Failure!);
@@ -267,7 +368,7 @@ public class RemoteWorkflowDefinitionService(IRemoteBackendApiClientProvider rem
         var fileName = response.GetDownloadedFileNameOrDefault($"workflow-definition-{definitionId}.json");
         var fileDownload = new FileDownload(fileName, response.Content!);
         await mediator.NotifyAsync(new WorkflowDefinitionExported(definitionId, versionOptions, fileDownload), cancellationToken);
-        
+
         return fileDownload;
     }
 

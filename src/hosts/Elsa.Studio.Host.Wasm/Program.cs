@@ -26,7 +26,7 @@ builder.Services.AddTransient<CookieHandler>();
 builder.Services.AddHttpClient("Elsa.Studio.ServerAPI",
         client => client.BaseAddress = new Uri(builder.HostEnvironment.BaseAddress))
     .AddHttpMessageHandler<CookieHandler>();
-    //.AddHttpMessageHandler<AuthenticatingApiHttpMessageHandler>();
+//.AddHttpMessageHandler<AuthenticatingApiHttpMessageHandler>();
 builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("Elsa.Studio.ServerAPI"));
 
 builder.RootComponents.RegisterCustomElsaStudioElements();

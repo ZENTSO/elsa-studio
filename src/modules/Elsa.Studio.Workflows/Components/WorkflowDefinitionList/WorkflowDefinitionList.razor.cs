@@ -4,12 +4,16 @@ using Elsa.Api.Client.Resources.WorkflowInstances.Requests;
 using Elsa.Api.Client.Shared.Models;
 using Elsa.Studio.DomInterop.Contracts;
 using Elsa.Studio.Workflows.Domain.Contracts;
+using Elsa.Studio.Workflows.Domain.Extensions;
 using Elsa.Studio.Workflows.Models;
 using Humanizer;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
+using Microsoft.Extensions.Logging;
 using MudBlazor;
+using Newtonsoft.Json;
 using Refit;
+using System.Diagnostics;
 
 namespace Elsa.Studio.Workflows.Components.WorkflowDefinitionList;
 
@@ -106,37 +110,153 @@ public partial class WorkflowDefinitionList
 
     private async Task OnCreateWorkflowClicked()
     {
-        var workflowName = await WorkflowDefinitionService.GenerateUniqueNameAsync();
+        try
+        {
+            var settings = new JsonSerializerSettings
+            {
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                Error = (sender, args) =>
+                {
+                    // Log the error or handle it as needed
+                    args.ErrorContext.Handled = true;
+                }
+            };
 
-        var parameters = new DialogParameters<CreateWorkflowDialog>
+            //Debugger.Break();
+            // Generate a unique workflow name
+            var workflowName = await WorkflowDefinitionService.GenerateUniqueNameAsync();
+
+
+            Console.WriteLine("workflowName");
+            Console.WriteLine(workflowName);
+
+            if (string.IsNullOrWhiteSpace(workflowName))
+            {
+                throw new InvalidOperationException("WorkflowDefinitionList.OnCreateWorkflowClicked : Generated workflow name is null or empty.");
+            }
+
+            // Setup dialog parameters and options
+            var parameters = new DialogParameters<CreateWorkflowDialog>
         {
             { x => x.WorkflowName, workflowName }
         };
 
-        var options = new DialogOptions
+            var options = new DialogOptions
+            {
+                CloseOnEscapeKey = true,
+                Position = DialogPosition.Center,
+                CloseButton = true,
+                FullWidth = true,
+                MaxWidth = MaxWidth.Small
+            };
+
+            // Show the dialog to the user
+            var dialogInstance = await DialogService.ShowAsync<CreateWorkflowDialog>("New workflow", parameters, options);
+
+
+            Console.WriteLine("dialogInstance");
+            //Console.WriteLine(JsonConvert.SerializeObject(dialogInstance, settings));
+
+            var dialogResult = await dialogInstance.Result;
+
+            Console.WriteLine("dialogResult");
+            Console.WriteLine(JsonConvert.SerializeObject(dialogResult, settings));
+
+            Console.WriteLine("dialogResult.Data");
+            Console.WriteLine(JsonConvert.SerializeObject(dialogResult.Data, settings));
+
+            Console.WriteLine("Canceled");
+            Console.WriteLine(dialogResult.Canceled);
+
+            // Check if the dialog was canceled
+            if (!dialogResult.Canceled)
+            {
+
+                var newWorkflowModel = dialogResult.Data as WorkflowMetadataModel;
+
+                Console.WriteLine("newWorkflowModel");
+                Console.WriteLine(JsonConvert.SerializeObject(newWorkflowModel, settings));
+
+
+                if (newWorkflowModel != null)
+                {
+
+                    // Invoke the service to create a new workflow definition
+                    Console.WriteLine("newWorkflowModelName");
+                    Console.WriteLine(newWorkflowModel.Name);
+                    Console.WriteLine("newWorkflowModelDescription");
+                    Console.WriteLine(newWorkflowModel.Description);
+
+                    if (dialogResult.Data == null)
+                    {
+                        throw new InvalidOperationException("WorkflowDefinitionList.OnCreateWorkflowClicked : dialogResult.Data is null !");
+                    }
+
+                    var result = await InvokeWithBlazorServiceContext(async () => await WorkflowDefinitionService.CreateNewDefinitionAsync(newWorkflowModel.Name, newWorkflowModel.Description));
+                    //var result = await InvokeWithBlazorServiceContext(() => WorkflowDefinitionService.CreateNewDefinitionAsync("Workflow1", "Workflow1"));
+
+                    Console.WriteLine("result");
+                    Console.WriteLine(JsonConvert.SerializeObject(result, settings));
+
+                    // Handle success and failure scenarios
+                    await result.OnSuccessAsync(definition => EditAsync(definition.DefinitionId));
+
+                    result.OnFailed(errors => Snackbar.Add(string.Join(Environment.NewLine, errors.Errors)));
+                }
+
+                //if (dialogResult.Data is WorkflowMetadataModel newWorkflowModel)
+                //{
+                //    Console.WriteLine("dialogResult", JsonConvert.SerializeObject(dialogResult));
+
+                //    // Invoke the service to create a new workflow definition
+                //    Console.WriteLine("newWorkflowModelName", newWorkflowModel.Name);
+                //    Console.WriteLine("newWorkflowModelDescription", newWorkflowModel.Description);
+
+                //    if (dialogResult.Data == null)
+                //    {
+                //        throw new InvalidOperationException("WorkflowDefinitionList.OnCreateWorkflowClicked : dialogResult.Data is null !");
+                //    }
+                //    var result = await InvokeWithBlazorServiceContext(() => WorkflowDefinitionService.CreateNewDefinitionAsync(newWorkflowModel.Name, newWorkflowModel.Description));
+                //    //var result = await InvokeWithBlazorServiceContext(() => WorkflowDefinitionService.CreateNewDefinitionAsync("Workflow1", "Workflow1"));
+
+                //    // Handle success and failure scenarios
+                //    await result.OnSuccessAsync(definition => EditAsync(definition.DefinitionId));
+
+                //    result.OnFailed(errors => Snackbar.Add(string.Join(Environment.NewLine, errors.Errors)));
+                //}
+                else
+                {
+                    throw new InvalidOperationException("WorkflowDefinitionList.OnCreateWorkflowClicked : Dialog result data is not of type WorkflowMetadataModel.");
+                }
+            }
+        }
+        catch (OperationCanceledException ex)
         {
-            CloseOnEscapeKey = true,
-            Position = DialogPosition.Center,
-            CloseButton = true,
-            FullWidth = true,
-            MaxWidth = MaxWidth.Small
-        };
-
-        var dialogInstance = await DialogService.ShowAsync<CreateWorkflowDialog>("New workflow", parameters, options);
-        var dialogResult = await dialogInstance.Result;
-
-        if (!dialogResult.Canceled)
+            // Handle task cancellation specifically
+            throw new InvalidOperationException("WorkflowDefinitionList.OnCreateWorkflowClicked : Workflow creation operation was canceled: {Message}" + ex.Message);
+        }
+        catch (ValidationApiException ex)
         {
-            var newWorkflowModel = (WorkflowMetadataModel)dialogResult.Data;
-            var result = await InvokeWithBlazorServiceContext(() => WorkflowDefinitionService.CreateNewDefinitionAsync(newWorkflowModel.Name!, newWorkflowModel.Description!));
-
-            await result.OnSuccessAsync(definition => EditAsync(definition.DefinitionId));
-            result.OnFailed(errors => Snackbar.Add(string.Join(Environment.NewLine, errors.Errors)));
+            // Handle validation errors that may occur during workflow creation
+            var validationErrors = ex.GetValidationErrors();
+            Snackbar.Add("Validation errors occurred: " + string.Join(Environment.NewLine, validationErrors.Errors), Severity.Error);
+            throw new InvalidOperationException("WorkflowDefinitionList.OnCreateWorkflowClicked : Validation errors occurred during workflow creation: {ValidationErrors}" + validationErrors);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("An unexpected error occurred: " + ex.Message, Severity.Error);
+            throw new InvalidOperationException("WorkflowDefinitionList.OnCreateWorkflowClicked : An unexpected error occurred while creating a new workflow:  Message: " + ex.Message + " StackTrace : " + ex.StackTrace + " InnerException : " + ex.InnerException + " Data : " + ex.Data);
         }
     }
 
+
     private async Task EditAsync(string definitionId)
     {
+        if (string.IsNullOrEmpty(definitionId))
+        {
+            throw new InvalidOperationException("WorkflowDefinitionList.EditAsync :definitionId is null or empty!");
+        }
+
         await EditWorkflowDefinition.InvokeAsync(definitionId);
     }
 
@@ -231,17 +351,17 @@ public partial class WorkflowDefinitionList
             Snackbar.Add(message, Severity.Info, options => { options.SnackbarVariant = Variant.Filled; });
         }
 
-        if (response.UpdatedConsumers.Count > 0)
-        {
-            var message = response.UpdatedConsumers.Count == 1
-                ? "One workflow consuming a published workflow has been updated"
-                : $"{response.UpdatedConsumers.Count} workflows consuming published workflows have been updated";
-            Snackbar.Add(message, Severity.Info, options =>
-            {
-                options.SnackbarVariant = Variant.Filled;
-                options.VisibleStateDuration = 3000;
-            });
-        }
+        //if (response.UpdatedConsumers.Count > 0)
+        //{
+        //    var message = response.UpdatedConsumers.Count == 1
+        //        ? "One workflow consuming a published workflow has been updated"
+        //        : $"{response.UpdatedConsumers.Count} workflows consuming published workflows have been updated";
+        //    Snackbar.Add(message, Severity.Info, options =>
+        //    {
+        //        options.SnackbarVariant = Variant.Filled;
+        //        options.VisibleStateDuration = 3000;
+        //    });
+        //}
 
         if (response.NotFound.Count > 0)
         {

@@ -1,6 +1,7 @@
 using Elsa.Studio.Contracts;
 using Elsa.Studio.Services;
 using Microsoft.AspNetCore.Components;
+using System.Diagnostics;
 
 namespace Elsa.Studio.Components;
 
@@ -81,7 +82,7 @@ public abstract class StudioComponentBase : ComponentBase, IHandleEvent, IHandle
             BlazorServiceAccessor.Services = null!;
         }
     }
-    
+
     /// <summary>
     /// Invokes the given function with the Blazor service context.
     /// </summary>
@@ -89,10 +90,19 @@ public abstract class StudioComponentBase : ComponentBase, IHandleEvent, IHandle
     /// <returns>A task that represents the asynchronous operation.</returns>
     protected async Task<T> InvokeWithBlazorServiceContext<T>(Func<Task<T>> func)
     {
+        if (func == null)
+        {
+            throw new ArgumentNullException(nameof(func), "StudioComponentBase.InvokeWithBlazorServiceContext : The function to be invoked cannot be null.");
+        }
+
         try
         {
-            BlazorServiceAccessor.Services = Services;
+            BlazorServiceAccessor.Services = Services ?? throw new InvalidOperationException("StudioComponentBase.InvokeWithBlazorServiceContext : Services cannot be null.");
             return await func();
+        }
+        catch (Exception ex)
+        {
+            throw new ArgumentNullException("An error occurred while invoking the function with the Blazor service context: " + ex.Message);
         }
         finally
         {

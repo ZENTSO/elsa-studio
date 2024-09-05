@@ -4,11 +4,24 @@ namespace Elsa.Studio.Workflows.Domain.Models;
 
 public record WorkflowDefinitionVersion(string WorkflowDefinitionId, string WorkflowDefinitionVersionId, int Version)
 {
+    //public static WorkflowDefinitionVersion FromDefinition(WorkflowDefinition workflowDefinition)
+    //{
+    //    return new(workflowDefinition.DefinitionId, workflowDefinition.Id, workflowDefinition.Version);
+    //}
+
     public static WorkflowDefinitionVersion FromDefinition(WorkflowDefinition workflowDefinition)
     {
-        return new(workflowDefinition.DefinitionId, workflowDefinition.Id, workflowDefinition.Version);
+        if (workflowDefinition == null)
+            throw new ArgumentNullException(nameof(workflowDefinition), "WorkflowDefinitionVersion.FromDefinition : The workflowDefinition parameter cannot be null.");
+
+        return new WorkflowDefinitionVersion(
+            workflowDefinition.DefinitionId ?? throw new InvalidOperationException("DefinitionId is required"),
+            workflowDefinition.Id ?? throw new InvalidOperationException("Id is required"),
+            workflowDefinition.Version
+        );
     }
-    
+
+
     public static WorkflowDefinitionVersion FromDefinitionSummary(WorkflowDefinitionSummary workflowDefinitionSummary)
     {
         return new(workflowDefinitionSummary.DefinitionId, workflowDefinitionSummary.Id, workflowDefinitionSummary.Version);
